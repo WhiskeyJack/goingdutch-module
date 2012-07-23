@@ -1,0 +1,17 @@
+name = Going Dutch
+description = Implements menu structure and nodes for Going Dutch
+core = 7.x
+
+files[] = going_dutch.install
+files[] = going_dutch.module
+files[] = includes/gd_admin.inc
+files[] = includes/gd_common.inc
+files[] = includes/gd_deposit_form.inc
+files[] = includes/gd_event_form.inc
+files[] = includes/gd_expense_form.inc
+files[] = includes/gd_pages.inc
+files[] = includes/gd_search.inc
+files[] = includes/gd_settle_function_old.inc
+files[] = singleton/gd_me.inc
+files[] = model/gd_user.inc
+files[] = model/gd_group.inc

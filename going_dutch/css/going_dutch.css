@@ -1,0 +1,47 @@
+/* 
+    Document   : going_dutch
+    Created on : Nov 1, 2011, 2:35:58 PM
+    Author     : quickstart
+    Description:
+        Purpose of the stylesheet follows.
+*/
+
+/* 
+   TODO customize this sample style
+   Syntax recommendation http://www.w3.org/TR/REC-CSS2/
+*/
+
+/* highlight table rows */
+.gd tr:hover{
+  background-color: #99FF99;
+}
+
+/* reset bg color because TableSort column overrides row highlight */
+.gd td.active {
+  background-color: transparent;
+}
+
+/* format cash values in tables */
+.gd .cash_value {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* right align for cells etc */
+.gd .r_align {
+  text-align: right;
+}
+
+/* center align for cells etc */
+.gd .c_align {
+  text-align: center;
+}
+
+/* table as block */
+.gd tr td a {
+  display: block;
+  height: 100%;
+  width: 100%;
+  text-decoration: none;
+  color: #000;
+}

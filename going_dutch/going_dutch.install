@@ -1,0 +1,140 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function going_dutch_install() {
+  // fill the table with the group pages
+  $t = get_t();
+  $rows = array(
+      array('page_id' => 1, 'page_key' => 'balance', 'page_weight' => 10, 'page_access' => 5, 'page_name' => $t('Balance Sheet')),
+      array('page_id' => 2, 'page_key' => 'payment', 'page_weight' => 20, 'page_access' => 5, 'page_name' => $t('Payment')),
+      array('page_id' => 3, 'page_key' => 'deposit', 'page_weight' => 30, 'page_access' => 5, 'page_name' => $t('Deposit')),
+      array('page_id' => 4, 'page_key' => 'event', 'page_weight' => 40, 'page_access' => 5, 'page_name' => $t('Add Event')),
+      array('page_id' => 5, 'page_key' => 'info', 'page_weight' => 50, 'page_access' => 5, 'page_name' => $t('Group Info')),
+      array('page_id' => 6, 'page_key' => 'events', 'page_weight' => 60, 'page_access' => 5, 'page_name' => $t('Events')),
+      array('page_id' => 7, 'page_key' => 'expenses', 'page_weight' => 70, 'page_access' => 5, 'page_name' => $t('Expenses')),
+      array('page_id' => 8, 'page_key' => 'deposits', 'page_weight' => 80, 'page_access' => 5, 'page_name' => $t('Deposits')),
+      array('page_id' => 9, 'page_key' => 'visual', 'page_weight' => 90, 'page_access' => 5, 'page_name' => $t('Visual')),
+      array('page_id' => 10, 'page_key' => 'settle', 'page_weight' => 100, 'page_access' => 5, 'page_name' => $t('Settle')),
+      array('page_id' => 11, 'page_key' => 'close', 'page_weight' => 110, 'page_access' => 1, 'page_name' => $t('Close'))
+  );
+
+  if (db_table_exists('going_dutch_grouppage')) {
+    foreach ($rows as $row) {
+      db_insert('going_dutch_grouppage')->fields($row)->execute();
+    }
+  }
+}
+
+/**
+ * Implements hook_enable().
+ */
+function going_dutch_enable() {
+  $t = get_t();
+
+  // Create Going Dutch menus, if Menu module is enabled.
+  if (module_exists('menu')) {
+    $menu = array(
+        'menu_name' => 'gd_group_menu',
+        'title' => $t('Going Dutch dynamic user group list'),
+        'description' => $t('List of groups the user is a member of.'),
+    );
+    menu_save($menu);
+    $menu = array(
+        'menu_name' => 'gd_group_options_menu',
+        'title' => $t('Going Dutch group options for each group'),
+        'description' => $t('List of options for each group.'),
+    );
+    menu_save($menu);
+  }
+  
+  variable_set('date_format_gd_expense_date', 'D, m/d/Y');
+  variable_set('site_frontpage', 'gd/router');
+  variable_set('gd_db_pass', '58r4huw239');
+  variable_set('gd_db_host', 'localhost');
+  variable_set('gd_db_user', 'dutch');
+  variable_set('gd_db_name', 'goingdutch');
+  variable_set('gd_db_driver', 'mysql');
+  variable_set('gd_welcome_page', '');
+  menu_rebuild();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function going_dutch_uninstall() {
+  variable_del('gd_db_host');
+  variable_del('gd_db_user');
+  variable_del('gd_db_pass');
+  variable_del('gd_db_name');
+  variable_del('gd_db_driver');
+  variable_del('gd_welcome_page');
+  variable_del('date_format_gd_expense_date');
+  // Delete the development menu.
+  if (module_exists('menu')) {
+    if ($gd_group_menu = menu_load('gd_group_menu')) {
+      menu_delete($gd_group_menu);
+    }
+    if ($gd_group_options_menu = menu_load('gd_group_options_menu')) {
+      menu_delete($gd_group_options_menu);
+    }
+  }
+}
+
+/**
+ * Rebuild the menus 
+ */
+function going_dutch_update_7001() {
+  db_delete('menu_links')
+          ->condition('module', 'going_dutch')
+          ->execute();
+  variable_set('menu_rebuild_needed', TRUE);
+
+  return t('Going Dutch module menu links will be rebuilt.');
+}
+
+
+/**
+ * Implements hook_schema().
+ */
+function going_dutch_schema() {
+  $schema['going_dutch_grouppage'] = array(
+    'description' => 'Stores the group option pages for the Going Dutch module.',
+    'fields' => array(
+      'page_id'    => array(
+        'description' => 'unique id of the grouppage',
+        'type' => 'int',
+        'length' => 11,
+        'not null' => TRUE,
+      ),
+      'page_key' => array(
+        'description' => 'Key of the grouppage, used as path',
+        'type' => 'varchar',
+        'length' => 10,
+        'not null' => TRUE,
+      ),
+      'page_weight'    => array(
+        'description' => 'Determines sorting order, heavier items sink to the bottom',
+        'type' => 'int',
+        'length' => 11,
+        'not null' => TRUE,
+      ),
+      'page_name' => array(
+        'description' => 'Name of the group options page',
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+      ),
+      'page_access' => array(
+        'description' => 'Minimum required role required for access (0=owner, 1=admin, 5=guest etc)',
+        'type' => 'int',
+        'length' => 3,
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('page_id'),
+  );
+
+  return $schema;
+}

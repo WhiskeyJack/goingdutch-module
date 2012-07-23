@@ -1,0 +1,544 @@
+<?php
+
+/**
+ * @file
+ * Going Dutch module file
+ *
+ * This module creates the menu links and nodes for Going Dutch
+ * 
+ * TODO: limit number of groups in group list
+ * TODO: allow to select which groups should be in menu list
+ * TODO: handle users with no GD Id
+ * TODO: put salt of gd user login in config parameters
+ * 
+ */
+
+/**
+ * Implement hook_help().
+ */
+function going_dutch_help($path, $arg) {
+  if ($path == 'admin/help#going_dutch') {
+    return t('The Going Dutch module creates the menu links and nodes for Going Dutch. Configuration options can be set via the admin interface.');
+  }
+}
+
+/**
+ * Implementation of hook_perm()
+ *
+ * This function takes 0 arguments, and returns an array of permissions
+ * defined by our module. Our permissions are automatically made available
+ * under admin/user/permissions.
+ */
+function going_dutch_permission() {
+  return array(
+      'administer going dutch' => array(
+          'title' => t('Administer Going Dutch module'),
+          'description' => t('Administer the Going Dutch configuration parameters.'),
+      ),
+  );
+}
+
+function gd_is_logged_in() {
+  global $user;
+  if ($user->uid == 0)
+    return FALSE;
+  return TRUE;
+}
+
+function gd_is_not_logged_in() {
+  global $user;
+  if ($user->uid == 0)
+    return TRUE;
+  return FALSE;
+}
+
+/**
+ * Routers logged in users to the overview
+ * Others go to the welcome page
+ * @global type $user 
+ */
+function gd_router() {
+  global $user;
+  if ($user->uid == 0)
+    drupal_goto('gd/welcome');
+  else
+    drupal_goto('gd/overview');
+}
+
+function going_dutch_login() {
+  drupal_goto('gd/overview');
+}
+
+/**
+ * Implement hook_menu().
+ */
+function going_dutch_menu() {
+  $items["gd/router"] = array(
+      'title' => 'Welcome',
+      'description' => 'Check',
+      'page callback' => 'gd_router',
+      'access callback' => TRUE,
+      'menu_name' => 'no_show',
+      'weight' => 0,
+      'type' => MENU_NORMAL_ITEM,
+  );
+  $items["gd/search"] = array(
+      'title' => 'Search',
+      'description' => 'Search results',
+      'page callback' => 'gd_search',
+      'page arguments' => array(2),
+      'access callback' => TRUE,
+      'menu_name' => 'no_show',
+      'weight' => 0,
+      'type' => MENU_NORMAL_ITEM,
+      'file' => 'includes/gd_search.inc',
+  );
+  $items["gd/welcome"] = array(
+      'title' => 'Welcome',
+      'description' => 'Welcome page',
+      'page callback' => 'gd_show_overview',
+      'access callback' => 'gd_is_not_logged_in',
+      'menu_name' => 'gd_group_menu',
+      'weight' => 0,
+      'type' => MENU_NORMAL_ITEM,
+      'file' => 'includes/gd_pages.inc',
+  );
+  // create menu items for all groups in the Going Dutch database
+  // which menu items are shown is determined by the access callback
+  $items["gd/overview"] = array(
+      'title' => 'Overview',
+      'description' => 'Balance overview of all groups',
+      'page callback' => 'gd_show_overview',
+      'access callback' => 'gd_is_logged_in',
+      'menu_name' => 'gd_group_menu',
+      'weight' => 0,
+      'type' => MENU_NORMAL_ITEM,
+      'file' => 'includes/gd_pages.inc',
+  );
+  $groups = gd_get_groups();
+  $weight = 1;
+  foreach ($groups as $group) {
+    $items["gd/{$group['group_id']}"] = array(
+        'title' => $group['name'],
+        'title callback' => FALSE,
+        'description' => $group['description'],
+        'page callback' => 'gd_show_group',
+        'page arguments' => array("{$group['group_id']}"),
+        'access callback' => 'gd_is_group_member',
+        'access arguments' => array("{$group['group_id']}"),
+        'menu_name' => 'gd_group_menu',
+        'type' => MENU_NORMAL_ITEM,
+        'file' => 'includes/gd_pages.inc',
+        'weight' => $weight
+    );
+    $weight++;
+  }
+  // menu was rebuilded, so update this flag for all groups in going dutch db
+  gd_groups_added();
+
+  // group pages array & create menu items
+  $gd_group_pages = gd_get_grouppages();
+  foreach ($gd_group_pages as $gd_linkid => $gd_group_page) {
+    $items["gd/%gd_get_groupid/{$gd_group_page->page_key}"] = array(
+        'title' => $gd_group_page->page_name,
+        'description' => 'Group option pages for the Going Dutch module.',
+        'page callback' => 'gd_show_group',
+        'page arguments' => array(1, 2, 3),
+        'access callback' => 'gd_is_group_member',
+        'access arguments' => array(1, 2),
+        'menu_name' => 'gd_group_options_menu',
+        'weight' => $gd_group_page->page_weight,
+        'file' => 'includes/gd_pages.inc',
+        'type' => MENU_NORMAL_ITEM,
+    );
+  }
+
+  // create admin menu entry for module configuration
+  $items['admin/config/system/going_dutch'] = array(
+      'title' => 'Going Dutch configuration',
+      'description' => 'Configuration for the Going Dutch module.',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('going_dutch_admin_form'),
+      'access arguments' => array('administer going dutch'),
+      'file' => 'includes/gd_admin.inc',
+      'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Implementation of hook_init
+ * Here add GD user details to $user and load common functions
+ */
+function going_dutch_init() {
+  module_load_include('inc', 'going_dutch', 'includes/gd_common');
+  global $user;
+  if ($user->uid)
+    GDme();
+}
+
+/**
+ * Implementation of hook_date_format_types
+ * Defines additional date types for Going Dutch module
+ * @return array
+ */
+function going_dutch_date_format_types() {
+  return array(
+      'gd_expense_date' => t('Going Dutch expense date')
+  );
+}
+
+/**
+ * Implementation of hook_date_formats
+ * Defines the format of the additional date types for Going Dutch module
+ * @return array
+ */
+function going_dutch_date_formats() {
+  return array(
+      array(
+          'type' => 'gd_expense_date',
+          'format' => 'D, d-m-Y',
+          'locales' => array('nl'),
+      ),
+      array(
+          'type' => 'gd_expense_date',
+          'format' => 'D, m/d/Y',
+          'locales' => array('en', 'en-us'),
+      )
+  );
+}
+
+/* * *
+ * Checks if the user is a member of the given going dutch group
+ */
+
+function gd_is_group_member($gd_group_id, $gd_page='') {
+  global $user;
+  $a = 1;
+  if (!gd_connect_db() || $user->uid == 0 ||
+          (isset($user->gd) && !isset($user->gd->username))) {    // necessary to prevent loop upon reloading module and losing db pass
+    db_set_active();   // necessary to reset to active, or we come in a loop ????
+    return FALSE;
+  }
+  db_set_active(); // necessary because for some reason the other db remains active sometimes
+  if (empty($gd_page))
+    return GDme()->is_group_member($gd_group_id);
+  else
+    return GDme()->may_access_page($gd_group_id, $gd_page);
+}
+
+//$d = GDme()->is_group_owner(1);
+
+/* * *
+ * Implements to_arg function to check if current path is for a going dutch page
+ * and contains a group number as a second argument
+ */
+
+function gd_get_groupid_to_arg($arg) {
+  $gd_page = (arg(0) == 'gd') ? TRUE : FALSE;
+  $gd_argid = arg(1);
+  $gd_groupid = ($gd_page && preg_match("/^\d+$/D", $gd_argid)) ? $gd_argid : '%';
+  return $gd_groupid;
+}
+
+/**
+ * Fetches the Going Dutch pages for group options
+ * @return array of objects
+ */
+function gd_get_grouppages() {
+  $query = db_select('going_dutch_grouppage', 'g');
+  $query->fields('g');
+  $pages = $query
+                  ->orderBy('page_weight', 'ASC')
+                  ->execute()->fetchAllAssoc('page_key');
+  return $pages;
+}
+
+function gd_groups_added() {
+  gd_connect_db();
+  $updated = db_update('groups')
+          ->fields(array('drupal_added' => 1))
+          ->condition('drupal_added', 0, '=')
+          ->execute();
+  db_set_active();
+}
+
+/**
+ * Provides easy access to the GD User Singleton
+ * @global type $user
+ * @staticvar GD_Me $gd_myself
+ * @return GD_Me 
+ */
+function GDme() {
+  global $user;
+  if ($user->uid == 0)
+    return FALSE;
+
+  static $gd_myself;
+  if (!isset($gd_myself))
+    $gd_myself = new GD_Me($user->uid);
+  return $gd_myself;
+}
+
+/**
+ * Set the active db connection to the Going Dutch database
+ * If the connection is not yet registered with Drupal, it is added
+ * If the configuration is incomplete, a Drupal error message is set.
+ */
+function gd_connect_db() {
+  $a = 1;
+  $result = db_set_active('gd_db');
+  if ($result != NULL)
+    return TRUE;
+
+  $gd_db = array(
+      'host' => variable_get('gd_db_host'),
+      'username' => variable_get('gd_db_user'),
+      'password' => variable_get('gd_db_pass'),
+      'database' => variable_get('gd_db_name'),
+      'driver' => variable_get('gd_db_driver')
+  );
+
+  foreach ($gd_db as $val) {
+    if (empty($val)) {
+      drupal_set_message(t('Going Dutch database configuration is not complete'), 'error', FALSE);
+      db_set_active();
+      return FALSE;
+    }
+  }
+
+  Database::addConnectionInfo('gd_db', 'default', $gd_db);
+  $result = db_set_active('gd_db');
+  if ($result != NULL)
+    return TRUE;
+  else {
+    drupal_set_message(t('Cannot connect to Going Dutch database, please check the configuration'), 'error', FALSE);
+    db_set_active();
+    return FALSE;
+  }
+}
+
+/**
+ * Gets all Going Dutch groups, used for menu building
+ * @param type $user
+ * @return type 
+ */
+function gd_get_groups($user = '') {
+  gd_connect_db();
+  $groups = db_select('groups', 'g')->fields('g')->execute()->fetchAll(PDO::FETCH_ASSOC);
+  db_set_active();
+  return $groups;
+}
+
+/**
+ * Changes the login validation handler
+ * Implementation of hook_form_FORM_ID_alter
+ * @param type $form
+ * @param type $form_state 
+ */
+function going_dutch_form_user_login_block_alter(&$form, &$form_state) {
+  _going_dutch_login_user_login_form_alter($form, $form_state);
+}
+
+/**
+ * Changes the login validation handler 
+ * Implementation of hook_form_FORM_ID_alter
+ * @param type $form
+ * @param type $form_state 
+ */
+function going_dutch_form_user_login_alter(&$form, &$form_state) {
+  $a = 1;
+  _going_dutch_login_user_login_form_alter($form, $form_state);
+}
+
+/**
+ * Changes the default login form validation for the going dutch validation
+ * Implementation of hook_form_alter
+ * @param type $form
+ * @param type $form_state 
+ */
+function _going_dutch_login_user_login_form_alter(&$form, &$form_state) {
+  foreach ($form['#validate'] as $key => &$value) {
+    if ($value == 'user_login_authenticate_validate') {
+      $value = 'gd_user_login_authenticate_validate';
+      break;
+    }
+  }
+}
+
+/**
+ * The custom login validation handler, checks the going dutch db first. 
+ * If not succesfull, it continues with the default login validation
+ * @param type $form
+ * @param type $form_state 
+ */
+function gd_user_login_authenticate_validate($form, &$form_state) {
+  $gd_id = authenticate_gd_user($form_state['values']['name'], $form_state['values']['pass']);
+  if ($gd_id != false) {
+    // http://api.drupal.org/api/drupal/modules--user--user.module/function/user_external_login_register
+    user_external_login_register($form_state['values']['name'], 'going_dutch');
+    $account = user_external_load($form_state['values']['name']);
+    $form_state['uid'] = $account->uid;
+    set_drupal_id_for_gd_user($gd_id, $account->uid);
+    global $user;
+    $account = $user;
+    GDme();
+    $account->mail = $user->gd->email;
+    $email = $user->gd->email;
+    $pass = $form_state['values']['pass'];
+    $user = user_save($account, array("pass" => $pass, 'mail' => $email));
+  }
+  else
+    user_login_authenticate_validate($form, $form_state);
+}
+
+/**
+ * Changes submit handler for search form
+ * @param type $form
+ * @param type $form_state 
+ */
+function going_dutch_form_search_block_form_alter(&$form, &$form_state) {
+  // Replace the search.module handler with your own.
+  if (in_array('search_box_form_submit', $form['#submit'])) {
+    $key = array_search('search_box_form_submit', $form['#submit']);
+    unset($form['#submit'][$key]);
+  }
+  array_unshift($form['#submit'], 'going_dutch_search_box_submit');
+}
+
+function going_dutch_search_box_submit($form, &$form_state) {
+  // The search form relies on control of the redirect destination for its
+  // functionality, so we override any static destination set in the request,
+  // for example by drupal_access_denied() or drupal_not_found()
+  // (see http://drupal.org/node/292565).
+  if (isset($_REQUEST['destination'])) {
+    unset($_REQUEST['destination']);
+  }
+  if (isset($_REQUEST['edit']['destination'])) {
+    unset($_REQUEST['edit']['destination']);
+  }
+
+  $form_id = $form['form_id']['#value'];
+  $form_state['redirect'] = 'gd/search/' . trim($form_state['values'][$form_id]);
+}
+
+/**
+ * Changes the password forgotten validation handler
+ * Implementation of hook_form_FORM_ID_alter
+ * @param type $form
+ * @param type $form_state 
+ */
+function going_dutch_form_user_pass_alter(&$form, &$form_state) {
+  if (in_array('user_pass_validate', $form['#validate'])) {
+    $key = array_search('user_pass_validate', $form['#validate']);
+    unset($form['#validate'][$key]);
+  }
+  array_unshift($form['#validate'], 'gd_user_pass_validate');
+}
+
+function going_dutch_form_user_profile_form_alter(&$form, &$form_state) {
+  $a=1;
+    if (in_array('user_profile_form_submit', $form['#submit'])) {
+    $key = array_search('user_profile_form_submit', $form['#submit']);
+    unset($form['#submit'][$key]);
+  }
+  array_unshift($form['#submit'], 'gd_user_profile_form_submit');
+}
+
+function gd_user_profile_form_submit(&$form, &$form_state) {
+  $account = $form_state['user'];
+  $name = $form_state['values']['name'];
+  $pass = $form_state['values']['pass'];
+  $drupal_id =  $account->uid;
+  
+// update gd user with new pass
+  $salt = "s8w4Er97u";
+  $pass = md5($salt.$pass.$salt);
+  gd_connect_db();
+  db_update('users')->fields(array('password' => $pass))->condition('drupal_id',$drupal_id)->execute();
+  db_set_active();
+  
+  // continue with normal processing
+  user_profile_form_submit($form, $form_state) ;
+}
+
+
+function gd_user_pass_validate(&$form, &$form_state) {
+  $a=1;
+  $name = trim($form_state['values']['name']);
+  // Try to load by email.
+  $users = user_load_multiple(array(), array('mail' => $name, 'status' => '1'));
+  // reset pass is put in $account->pass
+  $account = reset($users);
+  if (!$account) {
+    // No success, try to load by name.
+    $users = user_load_multiple(array(), array('name' => $name, 'status' => '1'));
+    $account = reset($users);
+  }
+  if (!$account) {
+    // try to find user in gd database
+    $gd_user = fetch_gd_user($name);
+    if (isset($gd_user->user_id) && $gd_user->user_id != false) {
+      $userinfo = array(
+          'name' => $gd_user->username,
+          'mail' => $gd_user->email,
+          'pass' => user_password(),
+          'init' => $name,
+          'status' => 1,
+          'access' => REQUEST_TIME,
+      );
+      $account = user_save(drupal_anonymous_user(), $userinfo);
+      user_set_authmaps($account, array("authname_going_dutch" => $name));
+      $users = user_load_multiple(array(), array('name' => $name, 'status' => '1'));
+      $account = reset($users);
+      // update gd acount with user id
+       gd_connect_db();
+  db_update('users')->fields(array('drupal_id' => $account->uid))->condition('user_id', $gd_user->user_id)->execute();
+  db_set_active();
+    }
+  }
+  if (isset($account->uid)) {
+    form_set_value(array('#parents' => array('account')), $account, $form_state);
+  } else {
+    form_set_error('name', t('Sorry, %name is not recognized as a user name or an e-mail address.', array('%name' => $name)));
+  }
+}
+
+function authenticate_gd_user($user, $pass) {
+  $salt = "s8w4Er97u";
+  $pass = md5($salt . $pass . $salt);
+  $sql = "SELECT * FROM users WHERE username='{$user}' AND password='{$pass}'";
+  gd_connect_db();
+  $user = db_query($sql)->fetchObject();
+  db_set_active();
+  if (isset($user->activated) && $user->activated != 0)
+    return $user->user_id;
+  return FALSE;
+}
+
+function fetch_gd_user($gd_user_identifier) {
+  // first check username
+  $sql = "SELECT * FROM users WHERE username='{$gd_user_identifier}'";
+  gd_connect_db();
+  $gd_user = db_query($sql)->fetchObject();
+  db_set_active();
+  if (isset($gd_user->activated) && $gd_user->activated != 0)
+    return $gd_user;
+  // then check email
+  $sql = "SELECT * FROM users WHERE email='{$gd_user_identifier}'";
+  gd_connect_db();
+  $gd_user = db_query($sql)->fetchObject();
+  db_set_active();
+  if (isset($gd_user->activated) && $gd_user->activated != 0)
+    return $gd_user;
+  return FALSE;
+}
+
+function set_drupal_id_for_gd_user($gd_id, $drupal_id) {
+  gd_connect_db();
+  db_update('users')->fields(array('drupal_id' => $drupal_id))->condition('user_id', $gd_id)->execute();
+  db_set_active();
+}
+
+?>
